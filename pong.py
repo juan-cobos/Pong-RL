@@ -43,8 +43,6 @@ class Paddle:
         # Move only if it's in grid range
         if np.all(next_Y >= 0) and np.all(next_Y < HEIGHT):
             self.Y = next_Y
-        #return self.X, self.Y
-
 
     def reset(self):
         self.X, self.Y = self._init_X, self._init_Y
@@ -69,7 +67,7 @@ class Ball:
 
     def move(self):
         self.center = self.center + np.int16(self.speed * self.dir)
-        return self.get_circle()
+        self.X, self.Y = self.get_circle()
 
     def get_circle(self): # Get the xx, yy coordinates of a circle representation
         xx, yy = np.meshgrid(
@@ -111,6 +109,14 @@ class Pong:
         return arr
 
     def display_objects(self, scale_x, scale_y):
+        # Draw ball
+        pygame.draw.circle(
+            self.window,
+            self.ball.color,
+            self.ball.center * np.array([scale_x, scale_y]),
+            self.ball.radius * min(scale_x, scale_y)
+        )
+
         # Draw Paddle1
         paddle1_rect = pygame.Rect(
             self.paddle1.X[0][0] * scale_x,
@@ -129,14 +135,6 @@ class Pong:
         )
         pygame.draw.rect(self.window, self.paddle2.color, paddle2_rect)
 
-        # Draw ball
-        pygame.draw.circle(
-            self.window,
-            self.ball.color,
-            self.ball.center * np.array([scale_x, scale_y]),
-            self.ball.radius * min(scale_x, scale_y)
-        )
-
     def step(self, action):
         reward = 0
         done = False
@@ -144,7 +142,7 @@ class Pong:
 
         self.paddle1.move(ACTIONS[action])
         self.paddle2.move(self.bot.get_action(self.ball, self.paddle2))
-        self.ball.X, self.ball.Y = self.ball.move()
+        self.ball.move()
 
         # If it's goal in any side
         if np.any(self.ball.X <= 0) or np.any(self.ball.X >= WIDTH - 1):
@@ -205,17 +203,20 @@ class Pong:
         self.display_objects(scale_x, scale_y)
         # Render score
         score_text = font.render(f"Score: {self.score[0]} - {self.score[1]}", True, COLOR_TO_RGB["white"])
-        score_pos = (20 * scale_x, 20 * scale_y)
-        self.window.blit(score_text, score_pos)  # Draw score at top-left
+        score_pos = (0.2 * WIDTH * scale_x, 0.2 * HEIGHT * scale_y)
+        text_rect = score_text.get_rect(center=score_pos)
+        self.window.blit(score_text, text_rect)  # Draw score at top-mid
 
         pygame.display.flip()
         clock.tick(30)
 
 class PongPolicy:
+    "Decides an action based on the ball's and paddle's position."
     def __init__(self, level):
         self.level = level
 
-    def get_action(self, ball: Ball, paddle: Paddle):
+    def get_action(self, ball, paddle):
+
         paddle_y = np.max(paddle.Y) - paddle.height/2
         dead_zone = 8
 
@@ -226,6 +227,5 @@ class PongPolicy:
         else:
             return np.array([0, 0])
 
-        "Decides an action based on the ball's and paddle's position."
 
 

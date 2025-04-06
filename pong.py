@@ -12,14 +12,12 @@ ACTIONS = {
     2 : np.array([0, -1], dtype=np.int8)  # DOWN
 }
 
-COLOR_TO_RGB = {
+COLORS = {
     "white" : (255, 255, 255),
     "black" : (0, 0, 0),
     "yellow": (255, 255, 0),
     "red"   : (255, 0, 0),
 }
-
-COLOR_TO_GRAY = {"black": 0, "gray": 128, "white": 255}
 
 WIDTH = 64
 HEIGHT = 64
@@ -34,7 +32,7 @@ class Paddle:
         self.color = color
 
     def move(self, action):
-        """ Move Y coords of paddle """
+        """ Move Y coords of the paddle based on action ensuring it's in grid range """
         next_Y = self.Y + self.speed * action[1]
         if np.all(next_Y >= 0) and np.all(next_Y < HEIGHT): # Move only if it's in grid range
             self.Y = next_Y
@@ -68,7 +66,7 @@ class Ball:
         self.X, self.Y = self.get_circle()
 
     def get_circle(self):
-        """ Get xx, yy coordinates of a circle representation from center and radius """
+        """ Generate xx, yy coordinates within a circle defined by its center and radius """
         xx, yy = np.meshgrid(
             range(self.center[0] - self.radius, self.center[0] + self.radius + 1),
             range(self.center[1] - self.radius, self.center[1] + self.radius + 1)
@@ -77,19 +75,22 @@ class Ball:
         yy_idx, xx_idx = np.where(circle_mask)
         x_coords = xx[yy_idx, xx_idx]
         y_coords = yy[yy_idx, xx_idx]
-        return x_coords, y_coords # self.X, self.Y
+        return x_coords, y_coords
 
 class Pong:
     def __init__(self, paddle_width=2, paddle_height=11, ball_radius=2, render_mode="rgb", level="low"):
 
-        render_modes = ("rgb", "grayscale")
-        assert render_mode in render_modes, "Render mode not supported"
-        # TODO: allow for grayscale img to implement only [width, height] array
+        supported_modes = (None, "rgb", "black_and_white")
+        assert render_mode in supported_modes, "Render mode not supported"
+        self.render_mode = render_mode
 
-        self.state = np.zeros((WIDTH, HEIGHT, 3), dtype=np.int8)
+        self.state = np.zeros((WIDTH, HEIGHT, 3) if render_mode == "rgb" else (WIDTH, HEIGHT), dtype=np.uint8)
         self.paddle1 = Paddle(paddle_width*2, HEIGHT//2, paddle_width, paddle_height)
         self.paddle2 = Paddle(WIDTH - paddle_width*2, HEIGHT//2, paddle_width, paddle_height)
-        self.ball = Ball(WIDTH//2, HEIGHT//2, radius=ball_radius)
+        self.ball = Ball(WIDTH//2, HEIGHT//2, ball_radius)
+
+        if render_mode != "rgb": # Change color to white if rgb not selected
+            self.paddle1.color, self.paddle2.color, self.ball.color = (COLORS["white"] for _ in range(3))
 
         self.bot = PongPolicy(level) # TODO: select policy based on level
         self.window = None
@@ -99,14 +100,17 @@ class Pong:
 
     def update_state(self):
         """ Restarts grid and places objects on it """
-        arr = np.zeros((WIDTH, HEIGHT, 3), dtype=np.uint8)
-        arr[:, :] = COLOR_TO_RGB["black"]  # Init all grid black
-
-        # Fill array with objects at their place
-        arr[self.paddle1.X, self.paddle1.Y] =  COLOR_TO_RGB[self.paddle1.color]
-        arr[self.paddle2.X, self.paddle2.Y] =  COLOR_TO_RGB[self.paddle2.color]
-        arr[self.ball.X, self.ball.Y] =  COLOR_TO_RGB[self.ball.color]
-
+        if self.render_mode == "rgb":
+            arr = np.zeros((WIDTH, HEIGHT, 3), dtype=np.uint8)
+            arr[:, :] = COLORS["black"] # Init all grid black
+            arr[self.paddle1.X, self.paddle1.Y] =  COLORS[self.paddle1.color]
+            arr[self.paddle2.X, self.paddle2.Y] =  COLORS[self.paddle2.color]
+            arr[self.ball.X, self.ball.Y] =  COLORS[self.ball.color]
+        else:
+            arr = np.zeros((WIDTH, HEIGHT), dtype=np.uint8)
+            arr[self.paddle1.X, self.paddle1.Y] = 1
+            arr[self.paddle2.X, self.paddle2.Y] = 1
+            arr[self.ball.X, self.ball.Y] = 1
         return arr
 
     def render_objects(self, scale_x, scale_y):
@@ -195,14 +199,14 @@ class Pong:
         font = pygame.font.Font('freesansbold.ttf', int(2*scale_x)) # Use default font, size 20
         clock = pygame.time.Clock()
         background = pygame.Surface((WIDTH * scale_x, HEIGHT * scale_y))
-        background.fill(COLOR_TO_RGB["black"])
+        background.fill(COLORS["black"])
 
         # Clear screen
         self.window.blit(background, (0, 0))
         # Display objects
         self.render_objects(scale_x, scale_y)
         # Render score
-        score_text = font.render(f"Score: {self.score[0]} - {self.score[1]}", True, COLOR_TO_RGB["white"])
+        score_text = font.render(f"Score: {self.score[0]} - {self.score[1]}", True, COLORS["white"])
         score_pos = (0.2 * WIDTH * scale_x, 0.2 * HEIGHT * scale_y)
         text_rect = score_text.get_rect(center=score_pos)
         self.window.blit(score_text, text_rect)

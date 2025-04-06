@@ -1,13 +1,15 @@
 import numpy as np
 import random
 import pygame
-from pygame import VIDEORESIZE
+
 random.seed(55)
 np.random.seed(45)
 
+# Constants
 ACTIONS = {
-    0: np.array([0, 1], dtype=np.int8),
-    1 : np.array([0, -1], dtype=np.int8)
+    0 : np.array([0, 0], dtype=np.int8),  # STAY
+    1 : np.array([0, 1], dtype=np.int8),  # UP
+    2 : np.array([0, -1], dtype=np.int8)  # DOWN
 }
 
 COLOR_TO_RGB = {
@@ -17,20 +19,13 @@ COLOR_TO_RGB = {
     "red"   : (255, 0, 0),
 }
 
-COLOR_TO_GRAY = {
-    "black"     : 0,
-    "mid_gray"  : 128,
-    "white"     : 255,
-}
+COLOR_TO_GRAY = {"black": 0, "gray": 128, "white": 255}
 
 WIDTH = 64
 HEIGHT = 64
 
-
 class Paddle:
     def __init__(self, x, y, width, height, speed=3, color="red"):
-
-        # pos = X, Y coordinates from meshgrid: https://numpy.org/doc/2.2/reference/generated/numpy.meshgrid.html
         self.X, self.Y = np.meshgrid(range(x-width//2, x+width//2), range(y-height//2, y+height//2))
         self._init_X, self._init_Y = self.X, self.Y
         self.width = width
@@ -39,12 +34,13 @@ class Paddle:
         self.color = color
 
     def move(self, action):
+        """ Move Y coords of paddle """
         next_Y = self.Y + self.speed * action[1]
-        # Move only if it's in grid range
-        if np.all(next_Y >= 0) and np.all(next_Y < HEIGHT):
+        if np.all(next_Y >= 0) and np.all(next_Y < HEIGHT): # Move only if it's in grid range
             self.Y = next_Y
 
     def reset(self):
+        """ Reinit paddle params """
         self.X, self.Y = self._init_X, self._init_Y
 
 class Ball:
@@ -60,16 +56,19 @@ class Ball:
         self.color = color
 
     def reset(self):
+        """ Reinit ball params """
         self.center = self._init_center
         angle = np.radians(random.uniform(-45, 45))
         self.dir = np.array((np.cos(angle), np.sin(angle))) * random.choice([-1, 1])
         self.X, self.Y = self.get_circle()
 
     def move(self):
+        """ Move X, Y coords of ball """
         self.center = self.center + np.int16(self.speed * self.dir)
         self.X, self.Y = self.get_circle()
 
-    def get_circle(self): # Get the xx, yy coordinates of a circle representation
+    def get_circle(self):
+        """ Get xx, yy coordinates of a circle representation from center and radius """
         xx, yy = np.meshgrid(
             range(self.center[0] - self.radius, self.center[0] + self.radius + 1),
             range(self.center[1] - self.radius, self.center[1] + self.radius + 1)
@@ -97,7 +96,9 @@ class Pong:
         self.score = [0, 0]
 
         self.steps = 0
+
     def update_state(self):
+        """ Restarts grid and places objects on it """
         arr = np.zeros((WIDTH, HEIGHT, 3), dtype=np.uint8)
         arr[:, :] = COLOR_TO_RGB["black"]  # Init all grid black
 
@@ -108,7 +109,8 @@ class Pong:
 
         return arr
 
-    def display_objects(self, scale_x, scale_y):
+    def render_objects(self, scale_x, scale_y):
+        """ Draws the game scaled objects (ball and paddles) onto the game window """
         # Draw ball
         pygame.draw.circle(
             self.window,
@@ -144,8 +146,7 @@ class Pong:
         self.paddle2.move(self.bot.get_action(self.ball, self.paddle2))
         self.ball.move()
 
-        # If it's goal in any side
-        if np.any(self.ball.X <= 0) or np.any(self.ball.X >= WIDTH - 1):
+        if np.any(self.ball.X <= 0) or np.any(self.ball.X >= WIDTH - 1): # If it's goal in any side
             reward = -1 if np.any(self.ball.X <= 0) else 1
             self.score += np.array([0, 1] if np.any(self.ball.X <= 0) else [1, 0])  # Update score
             self.ball.reset(), self.paddle1.reset(), self.paddle2.reset()  # Reset to init positions
@@ -185,9 +186,8 @@ class Pong:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 self.reset()
-            #if event.type == pygame.VIDEORESIZE:
-             #   self.window = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
 
+        # Get window size to allow resizability and scaling
         window_width, window_height = self.window.get_size()
         scale_x = window_width / WIDTH
         scale_y = window_height / HEIGHT
@@ -200,32 +200,33 @@ class Pong:
         # Clear screen
         self.window.blit(background, (0, 0))
         # Display objects
-        self.display_objects(scale_x, scale_y)
+        self.render_objects(scale_x, scale_y)
         # Render score
         score_text = font.render(f"Score: {self.score[0]} - {self.score[1]}", True, COLOR_TO_RGB["white"])
         score_pos = (0.2 * WIDTH * scale_x, 0.2 * HEIGHT * scale_y)
         text_rect = score_text.get_rect(center=score_pos)
-        self.window.blit(score_text, text_rect)  # Draw score at top-mid
+        self.window.blit(score_text, text_rect)
 
         pygame.display.flip()
         clock.tick(30)
 
 class PongPolicy:
-    "Decides an action based on the ball's and paddle's position."
+    """ Decides an action based on the ball's and paddle's position. """
     def __init__(self, level):
         self.level = level
 
-    def get_action(self, ball, paddle):
+    @staticmethod
+    def get_action(ball, paddle):
 
         paddle_y = np.max(paddle.Y) - paddle.height/2
         dead_zone = 8
 
         if ball.center[1] > paddle_y + dead_zone:
-            return ACTIONS[0]
-        elif ball.center[1] < paddle_y - dead_zone:
             return ACTIONS[1]
+        elif ball.center[1] < paddle_y - dead_zone:
+            return ACTIONS[2]
         else:
-            return np.array([0, 0])
+            return np.array(ACTIONS[0])
 
 
 

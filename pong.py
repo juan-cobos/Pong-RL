@@ -23,8 +23,8 @@ WIDTH = 64
 HEIGHT = 64
 
 class Paddle:
-    def __init__(self, x, y, width, height, speed=3, color="red"):
-        self.X, self.Y = np.meshgrid(range(x-width//2, x+width//2), range(y-height//2, y+height//2))
+    def __init__(self, x, y, width, height, speed=4, color="red"):
+        self.X, self.Y = np.meshgrid(range(x-width//2, x+1+width//2), range(y-height//2, y+1+height//2))
         self._init_X, self._init_Y = self.X, self.Y
         self.width = width
         self.height = height
@@ -42,7 +42,7 @@ class Paddle:
         self.X, self.Y = self._init_X, self._init_Y
 
 class Ball:
-    def __init__(self, x, y, radius, speed=3, color="yellow"):
+    def __init__(self, x, y, radius, speed=4, color="yellow"):
         self._init_center = np.array((x, y))
         self.center = np.array((x, y))
         self.radius = radius
@@ -78,7 +78,7 @@ class Ball:
         return x_coords, y_coords
 
 class Pong:
-    def __init__(self, paddle_width=2, paddle_height=11, ball_radius=2, render_mode="rgb", level="low"):
+    def __init__(self, paddle_width=1, paddle_height=11, ball_radius=2, render_mode="rgb", level="low"):
 
         supported_modes = (None, "rgb", "black_and_white")
         assert render_mode in supported_modes, "Render mode not supported"
@@ -94,9 +94,55 @@ class Pong:
 
         self.bot = PongPolicy(level) # TODO: select policy based on level
         self.window = None
+        self.clock = None
         self.score = [0, 0]
 
         self.steps = 0
+
+    def step(self, action):
+        reward = 0
+        done = False
+        self.steps += 1
+
+        self.paddle1.move(ACTIONS[action])
+        self.paddle2.move(self.bot.get_action(self.ball, self.paddle2))
+        self.ball.move()
+
+        if np.any(self.ball.X <= 0) or np.any(self.ball.X >= WIDTH - 1): # If it's goal in any side
+            reward = -1 if np.any(self.ball.X <= 0) else 1
+            self.score += np.array([0, 1] if np.any(self.ball.X <= 0) else [1, 0])  # Update score
+            self.ball.reset(), self.paddle1.reset(), self.paddle2.reset()  # Reset to init positions
+            self.state = self.update_state()
+            return self.state, reward, True
+
+        hit_walls = np.any(self.ball.Y <= 0) or np.any(self.ball.Y >= HEIGHT - 1)  # Hits side walls
+        hit_paddle1 = ( # Hits paddle1
+                np.any(np.isin(self.ball.X, self.paddle1.X))
+                and np.any(np.isin(self.ball.Y, self.paddle1.Y))
+                and self.ball.dir[0] < 0  # Goes in the right direction
+        )
+        hit_paddle2 = ( # Hits paddle2
+                np.any(np.isin(self.ball.X, self.paddle2.X))
+                and np.any(np.isin(self.ball.Y, self.paddle2.Y))
+                and self.ball.dir[0] > 0  # Goes in the right direction
+        )
+
+        if hit_walls or hit_paddle1 or hit_paddle2:
+            self.ball.dir = -self.ball.dir  # Reflect direction
+        # Update state with the new object locations
+        self.state = self.update_state()
+        if self.render_mode is not None:
+            self.render()
+
+        return self.state, reward, done
+
+    def reset(self):
+        if self.window is not None:
+            import sys
+            pygame.quit()
+            sys.exit()
+        #self.state = np.zeros((WIDTH, HEIGHT, 3) if self.render_mode == "rgb" else (WIDTH, HEIGHT), dtype=np.uint8)
+        #return self.state
 
     def update_state(self):
         """ Restarts grid and places objects on it """
@@ -141,50 +187,12 @@ class Pong:
         )
         pygame.draw.rect(self.window, self.paddle2.color, paddle2_rect)
 
-    def step(self, action):
-        reward = 0
-        done = False
-        self.steps += 1
-
-        self.paddle1.move(ACTIONS[action])
-        self.paddle2.move(self.bot.get_action(self.ball, self.paddle2))
-        self.ball.move()
-
-        if np.any(self.ball.X <= 0) or np.any(self.ball.X >= WIDTH - 1): # If it's goal in any side
-            reward = -1 if np.any(self.ball.X <= 0) else 1
-            self.score += np.array([0, 1] if np.any(self.ball.X <= 0) else [1, 0])  # Update score
-            self.ball.reset(), self.paddle1.reset(), self.paddle2.reset()  # Reset to init positions
-            self.state = self.update_state()
-            return self.state, reward, True
-
-        hit_walls = np.any(self.ball.Y <= 0) or np.any(self.ball.Y >= HEIGHT - 1)  # Hits side walls
-        hit_paddle1 = ( # Hits paddle1
-                np.any(np.isin(self.ball.X, self.paddle1.X))
-                and np.any(np.isin(self.ball.Y, self.paddle1.Y))
-                and self.ball.dir[0] < 0  # Goes in the right direction
-        )
-        hit_paddle2 = ( # Hits paddle2
-                np.any(np.isin(self.ball.X, self.paddle2.X))
-                and np.any(np.isin(self.ball.Y, self.paddle2.Y))
-                and self.ball.dir[0] > 0  # Goes in the right direction
-        )
-
-        if hit_walls or hit_paddle1 or hit_paddle2:
-            self.ball.dir = -self.ball.dir  # Reflect direction
-        # Update state with the new object locations
-        self.state = self.update_state()
-        self.render()
-        return self.state, reward, done
-
-    def reset(self):
-        if self.window is not None:
-            pygame.quit()
-
     def render(self):
         if self.window is None:
             pygame.init()
             pygame.display.init()
             self.window = pygame.display.set_mode((WIDTH, HEIGHT), pygame.RESIZABLE)
+            self.clock = pygame.time.Clock()
             pygame.display.set_caption("Pong")
 
         for event in pygame.event.get():
@@ -197,7 +205,7 @@ class Pong:
         scale_y = window_height / HEIGHT
 
         font = pygame.font.Font('freesansbold.ttf', int(2*scale_x)) # Use default font, size 20
-        clock = pygame.time.Clock()
+
         background = pygame.Surface((WIDTH * scale_x, HEIGHT * scale_y))
         background.fill(COLORS["black"])
 
@@ -211,8 +219,8 @@ class Pong:
         text_rect = score_text.get_rect(center=score_pos)
         self.window.blit(score_text, text_rect)
 
-        pygame.display.flip()
-        clock.tick(30)
+        pygame.display.update()
+        self.clock.tick(30)
 
 class PongPolicy:
     """ Decides an action based on the ball's and paddle's position. """

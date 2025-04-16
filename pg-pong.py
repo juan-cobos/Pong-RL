@@ -20,16 +20,18 @@ grad_buffer = {k: np.zeros_like(v) for k, v in model.items()}
 rmsprop_cache = {k: np.zeros_like(v) for k, v in model.items()}
 
 def sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-x)) # sigmoid "squashing" function to interval [0,1]
+    # sigmoid "squashing" function to interval [0,1], avoiding numerical overflow
+    return np.exp(x) / (1 + np.exp(x)) if x<0 else 1.0 / (1.0 + np.exp(-x))
 
-def discount_rewards(reward_array, T=50):
-    """ take 1D float array of rewards and compute truncated (last T) discounted reward """
-    # TODO: This can be written in one line
-    # TODO: consider not truncating or other methods
-    r = reward_array[-1][:T] # Reverse and truncate reward array
-    t = np.arange(T) # Get time steps array
-    discount_r = r * gamma ** t # Compute discounted reward based on time step
-    return discount_r[-1]
+
+def discounted_reward_to_go(r, T=50):
+    """ take 1D float array of rewards and compute truncated discounted reward """
+    discounted_rtg = np.zeros_like(r, dtype=np.float32)
+    running_add = 0
+    for t in reversed(range(T, len(r))):
+        running_add = r[t] + gamma * running_add
+        discounted_rtg[t] = running_add
+    return discounted_rtg
 
 def forward(x):
     h = x.ravel() @ model["W1"].T
@@ -53,8 +55,8 @@ wins = 0
 reward_sum = 0
 episode_count = 0
 
-n_episodes = 1000
-env = Pong(render_mode=None)
+n_episodes = 100
+env = Pong(render_mode="black_and_white")
 while n_episodes > episode_count:
 
     # Using frame difference as input img
@@ -87,7 +89,7 @@ while n_episodes > episode_count:
         xs, hs, dlogps, drs = [], [], [], []  # reset array memory
 
         # compute the discounted reward backwards through time
-        discounted_epr = discount_rewards(epr)
+        discounted_epr = discounted_reward_to_go(epr)
         # standardize the rewards to be unit normal (helps control the gradient estimator variance)
         discounted_epr -= np.mean(discounted_epr)
         discounted_epr /= np.std(discounted_epr)
